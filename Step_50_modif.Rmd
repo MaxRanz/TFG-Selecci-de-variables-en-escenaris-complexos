@@ -1,0 +1,90 @@
+---
+title: "Step_50"
+author: "Max Ranz de la Iglesia"
+date: "2026-05-03"
+output: html_document
+---
+
+```{r}
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_50.RData")
+library(bigmemory)
+library(biglm)
+library(bigstep)
+library(caret)
+
+# Inicialitzem els resultats
+resultats_step50 <- data.frame(
+  N = integer(), pi = numeric(), correlation = numeric(),
+  Sensibilitat = numeric(), Especificitat = numeric(),
+  VPP = numeric(), VPN = numeric(), Accuracy = numeric(),
+  NetBenefit = numeric()
+)
+vars_seleccionades_step <- list()
+
+system.time({
+  for (i in 1:nrow(comb)) {
+    N           <- comb$N[i]
+    pi          <- comb$pi[i]
+    correlation <- comb$correlation[i]
+    
+    # ── CANVI 1: iters segons N ──────────────────────────
+    iters_i <- ifelse(N == 1000, 100, 25)
+    # ────────────────────────────────────────────────────
+    
+    metrics <- list()
+    
+    # ── CANVI 2: matriu adaptada a iters_i ───────────────
+    vars_selec_bin <- matrix(0, nrow = iters_i, ncol = 100)
+    # ────────────────────────────────────────────────────
+
+    for (j in 1:iters_i) {   # ── CANVI 3: usar iters_i ──
+      print(paste("Escenari", i, "- Simulació", j, "/", iters_i,
+                  "| N =", N, "| pi =", pi, "| corr =", correlation))
+      
+      # Seleccionem les dades
+      x_mat <- X[[i]][[j]]
+      colnames(x_mat) <- paste0("X", 1:ncol(x_mat))
+      y_vec <- Y[[i]][[j]]
+      dades <- data.frame(y = y_vec, x_mat)
+      
+      # Ajustem el model stepwise
+      model_null <- glm(y ~ 1, data = dades, family = binomial)
+      model_full <- glm(y ~ ., data = dades, family = binomial)
+      model_step <- step(model_null,
+                         scope = list(lower = model_null, upper = model_full),
+                         direction = "both", trace = 0)
+      
+      # Mètriques
+      vars_seleccionades <- which(coefficients(model_step)[-1] != 0)
+      vars_selec_bin[j, vars_seleccionades] <- 1
+      metrics[[j]] <- metriques(vars_seleccionades, nv = num_vars)
+    }
+    
+    # Guardar resultats
+    resultats_step50 <- rbind(resultats_step50, data.frame(
+      N           = N,
+      pi          = pi,
+      correlation = correlation,
+      Sensibilitat = mean(sapply(metrics, function(x) x["sensibilitat"]), na.rm = TRUE),
+      Especificitat = mean(sapply(metrics, function(x) x["especificitat"]), na.rm = TRUE),
+      VPP          = mean(sapply(metrics, function(x) x["VPP"]),           na.rm = TRUE),
+      VPN          = mean(sapply(metrics, function(x) x["VPN"]),           na.rm = TRUE),
+      Accuracy     = mean(sapply(metrics, function(x) x["accuracy"]),      na.rm = TRUE),
+      NetBenefit   = mean(sapply(metrics, function(x) x["net_benefit"]),   na.rm = TRUE)
+    ))
+    
+    vars_seleccionades_step[[i]] <- vars_selec_bin
+    
+    # ── CANVI 4: guardat parcial per no perdre feina ─────
+    save(resultats_step50, vars_seleccionades_step,
+         file = "resultats_step50_parcial.RData")
+    cat("Escenari", i, "completat i guardat.\n")
+    # ────────────────────────────────────────────────────
+  }
+})
+
+print(resultats_step50)
+save(resultats_step50, vars_seleccionades_step, file = "resultats_step50_modificat.RData")
+```
+
