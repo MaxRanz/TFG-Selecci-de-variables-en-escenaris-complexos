@@ -1,0 +1,107 @@
+---
+title: "Boruta escenari nul"
+author: "Max Ranz de la Iglesia"
+date: "2026-04-08"
+output: html_document
+--- 
+
+
+# Boruta 50%
+```{r}
+# Boruta 50
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_50_corrAleat.RData")
+
+library(Boruta)
+library(caret)
+
+# =========================
+# Inicialitzem resultats
+# =========================
+resultats_boruta <- data.frame(
+  N             = integer(),
+  pi            = numeric(),
+  correlation   = character(),  
+  Sensibilitat  = numeric(),
+  Especificitat = numeric(),
+  VPP           = numeric(),
+  VPN           = numeric(),
+  Accuracy      = numeric(),
+  NetBenefit    = numeric(),
+  stringsAsFactors = FALSE
+)
+
+vars_seleccionades_boruta <- list()
+
+# =========================
+# Bucle principal
+# =========================
+system.time({
+  for (i in seq_len(nrow(comb))) {
+
+    N           <- comb$N[i]
+    pi          <- comb$pi[i]
+    correlation <- as.character(comb$correlation[i])  # <- forcem character
+
+    metrics        <- list()
+    vars_selec_bin <- matrix(0, nrow = iters, ncol = num_vars)
+
+    for (j in 1:iters) {
+      cat("Escenari", i, "- Simulació", j,
+          "(N=", N, "pi=", pi, "corr=", correlation, ")\n")
+
+      X_df  <- as.data.frame(X[[i]][[j]])
+      y_fac <- as.factor(Y[[i]][[j]])
+
+      df_boruta <- data.frame(y = y_fac, X_df)
+
+      tryCatch({
+        model_boruta <- suppressWarnings(
+          Boruta(y ~ ., data = df_boruta, doTrace = 0)
+        )
+
+        seleccionades <- getSelectedAttributes(model_boruta, withTentative = FALSE)
+
+        if (length(seleccionades) > 0) {
+          idx_sel <- as.numeric(gsub("[^0-9]", "", seleccionades))
+          idx_sel <- idx_sel[!is.na(idx_sel) & idx_sel >= 1 & idx_sel <= num_vars]
+          vars_selec_bin[j, idx_sel] <- 1
+          metrics[[j]] <- metriques(idx_sel, nv = num_vars)
+        } else {
+          metrics[[j]] <- metriques(integer(0), nv = num_vars)
+        }
+
+      }, error = function(e) {
+        cat(sprintf("  [WARN] Escenari %d, sim %d: %s\n", i, j, conditionMessage(e)))
+        metrics[[j]] <<- metriques(integer(0), nv = num_vars)
+      })
+    }
+
+    resultats_boruta <- rbind(
+      resultats_boruta,
+      data.frame(
+        N             = N,
+        pi            = pi,
+        correlation   = correlation,  # <- character "0","0.1","0.3","random"
+        Sensibilitat  = mean(sapply(metrics, function(x) x["sensibilitat"]),  na.rm = TRUE),
+        Especificitat = mean(sapply(metrics, function(x) x["especificitat"]), na.rm = TRUE),
+        VPP           = mean(sapply(metrics, function(x) x["VPP"]),           na.rm = TRUE),
+        VPN           = mean(sapply(metrics, function(x) x["VPN"]),           na.rm = TRUE),
+        Accuracy      = mean(sapply(metrics, function(x) x["accuracy"]),      na.rm = TRUE),
+        NetBenefit    = mean(sapply(metrics, function(x) x["net_benefit"]),   na.rm = TRUE),
+        stringsAsFactors = FALSE
+      )
+    )
+
+    vars_seleccionades_boruta[[i]] <- vars_selec_bin
+  }
+})
+
+# =========================
+# Guardem resultats
+# =========================
+print(resultats_boruta)
+save(resultats_boruta, vars_seleccionades_boruta,
+     file = "resultats_boruta_50_correlacio.RData")
+```
+
