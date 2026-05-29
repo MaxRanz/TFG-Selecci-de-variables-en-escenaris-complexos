@@ -6,21 +6,20 @@ output: html_document
 ---
 
 # Stepwise nul
+
 ```{r}
-
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
-load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_nul.RData")
+load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_nul_corrAleat.RData")
 
-# Resultats
 resultats_sw <- data.frame(
-  N = integer(),
-  pi = numeric(),
-  correlation = numeric(),
-  FP = numeric(),
-  FP_percent = numeric()
+  N           = integer(),
+  pi          = numeric(),
+  correlation = character(),  
+  FP          = numeric(),
+  FP_percent  = numeric(),
+  stringsAsFactors = FALSE
 )
 
-# Funció auxiliar per comptar variables seleccionades
 compta_vars_step <- function(model) {
   coeficients <- summary(model)$coefficients
   nvar <- nrow(coeficients) - 1
@@ -28,57 +27,57 @@ compta_vars_step <- function(model) {
   return(nvar)
 }
 
-# Iteracions
 system.time({
   for (i in seq_len(nrow(comb))) {
-    
-    N <- comb$N[i]
-    pi <- comb$pi[i]
-    correlation <- comb$correlation[i]
-    
+
+    N           <- comb$N[i]
+    pi          <- comb$pi[i]
+    correlation <- as.character(comb$correlation[i])  
+
     fp_stepwise <- numeric(iters)
-    
+
     for (j in 1:iters) {
-      
-      cat("Escenari", i, "- Simulació", j, "\n")
-      
-      # Dades
+      cat("Escenari", i, "- Simulació", j,
+          "| N =", N, "| pi =", pi, "| corr =", correlation, "\n")
+
       X_sub <- X[[i]][[j]]
       Y_bin <- Y[[i]][[j]]
       dades <- data.frame(Y = Y_bin, X_sub)
-      
-      # Model nul i complet
-      nulmodel <- glm(Y ~ 1, data = dades, family = binomial)
-      fullmodel <- glm(Y ~ ., data = dades, family = binomial)
-      
-      # Stepwise (direcció bidireccional)
-      stepmodel <- step(
-        nulmodel,
-        scope = list(lower = nulmodel, upper = fullmodel),
-        direction = "both",
-        trace = 0
-      )
-      
-      # Comptem variables seleccionades
-      fp_stepwise[j] <- compta_vars_step(stepmodel)
+
+      tryCatch({
+        nulmodel  <- glm(Y ~ 1,  data = dades, family = binomial)
+        fullmodel <- glm(Y ~ .,  data = dades, family = binomial)
+
+        stepmodel <- step(
+          nulmodel,
+          scope     = list(lower = nulmodel, upper = fullmodel),
+          direction = "both",
+          trace     = 0
+        )
+
+        fp_stepwise[j] <- compta_vars_step(stepmodel)
+
+      }, error = function(e) {
+        cat(sprintf("  [WARN] Escenari %d, sim %d: %s\n", i, j, conditionMessage(e)))
+        fp_stepwise[j] <<- 0
+      })
     }
-    
-    # Guardem resultats per escenari
+
     resultats_sw <- rbind(
       resultats_sw,
       data.frame(
-        N = N,
-        pi = pi,
+        N           = N,
+        pi          = pi,
         correlation = correlation,
-        FP = mean(fp_stepwise),
-        FP_percent = mean(fp_stepwise) / num_vars
+        FP          = mean(fp_stepwise),
+        FP_percent  = mean(fp_stepwise) / num_vars,
+        stringsAsFactors = FALSE
       )
     )
   }
 })
 
-# Mostra i desa resultats
 print(resultats_sw)
-save(resultats_sw, file = "resultats_sw_nul.RData")
+save(resultats_sw, file = "resultats_sw_nul_2.RData")
 ```
 
