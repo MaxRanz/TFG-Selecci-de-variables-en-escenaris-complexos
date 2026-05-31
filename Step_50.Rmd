@@ -16,7 +16,7 @@ library(caret)
 
 # Inicialitzem els resultats
 resultats_step50 <- data.frame(
-  N = integer(), pi = numeric(), correlation = numeric(), iter = integer(),
+  N = integer(), pi = numeric(), correlation = character(), iter = integer(),
   Sensibilitat = numeric(), Especificitat = numeric(),
   VPP = numeric(), VPN = numeric(), Accuracy = numeric(),
   NetBenefit = numeric()
@@ -28,7 +28,7 @@ system.time({
   for (i in  1:nrow(comb)) {
     N          <- comb$N[i]
     pi         <- comb$pi[i]
-    correlation <- comb$correlation[i]
+    correlation <- as.character(comb$correlation[i]) 
     
     metrics <- list()
     vars_selec_bin <- matrix(0, nrow = iters, ncol = 100)
@@ -75,5 +75,166 @@ system.time({
 
 print(resultats_step50)
 save(resultats_step50, vars_seleccionades_step, file = "resultats_step50.RData")
+```
+
+```{r}
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_50.RData")
+library(bigmemory)
+library(biglm)
+library(bigstep)
+library(caret)
+
+
+# Inicialitzem resultats
+resultats_step50 <- data.frame(
+  N = integer(),
+  pi = numeric(),
+  correlation = character(),
+  Sensibilitat = numeric(),
+  Especificitat = numeric(),
+  VPP = numeric(),
+  VPN = numeric(),
+  Accuracy = numeric(),
+  NetBenefit = numeric()
+)
+
+# Matrius de variables seleccionades
+vars_seleccionades_step <- vector("list", nrow(comb))
+
+temps_execucio <- system.time({
+
+  for (i in 1:nrow(comb)) {
+
+    N <- comb$N[i]
+    pi <- comb$pi[i]
+    correlation <- as.character(comb$correlation[i])
+
+    metrics <- list()
+
+    # Matriu binària: simulacions × variables
+    vars_selec_bin <- matrix(
+      0,
+      nrow = iters,
+      ncol = num_vars
+    )
+
+    for (j in 1:iters) {
+
+      cat(
+        "Escenari", i,
+        "- Simulació", j,
+        "| N =", N,
+        "| pi =", pi,
+        "| corr =", correlation,
+        "\n"
+      )
+
+      # Dades simulades
+      x_mat <- X[[i]][[j]]
+      y_vec <- Y[[i]][[j]]
+
+      # Nom de variables
+      colnames(x_mat) <- paste0("X", 1:ncol(x_mat))
+
+      # Data frame model
+      dades <- data.frame(
+        y = y_vec,
+        x_mat
+      )
+
+      # Models base
+      model_null <- glm(
+        y ~ 1,
+        data = dades,
+        family = binomial
+      )
+
+      model_full <- glm(
+        y ~ .,
+        data = dades,
+        family = binomial
+      )
+
+      # Stepwise bidireccional
+      model_step <- step(
+        model_null,
+        scope = list(
+          lower = model_null,
+          upper = model_full
+        ),
+        direction = "both",
+        trace = 0
+      )
+
+      # Variables seleccionades
+      vars_seleccionades <- which(
+        names(coef(model_step)) != "(Intercept)"
+      )
+
+      # Guardar selecció binària
+      if (length(vars_seleccionades) > 0) {
+        vars_selec_bin[
+          j,
+          vars_seleccionades
+        ] <- 1
+      }
+
+      # Mètriques
+      metrics[[j]] <- metriques(
+        vars_seleccionades = vars_seleccionades,
+        nv = num_vars
+      )
+    }
+
+    # Resultats mitjans per escenari
+    resultats_step50 <- rbind(
+      resultats_step50,
+      data.frame(
+        N = N,
+        pi = pi,
+        correlation = correlation,
+        Sensibilitat = mean(
+          sapply(metrics, function(x) x["sensibilitat"]),
+          na.rm = TRUE
+        ),
+        Especificitat = mean(
+          sapply(metrics, function(x) x["especificitat"]),
+          na.rm = TRUE
+        ),
+        VPP = mean(
+          sapply(metrics, function(x) x["VPP"]),
+          na.rm = TRUE
+        ),
+        VPN = mean(
+          sapply(metrics, function(x) x["VPN"]),
+          na.rm = TRUE
+        ),
+        Accuracy = mean(
+          sapply(metrics, function(x) x["accuracy"]),
+          na.rm = TRUE
+        ),
+        NetBenefit = mean(
+          sapply(metrics, function(x) x["net_benefit"]),
+          na.rm = TRUE
+        )
+      )
+    )
+
+    # Guardar variables seleccionades
+    vars_seleccionades_step[[i]] <- vars_selec_bin
+  }
+})
+
+# Resultats
+print(resultats_step50)
+print(temps_execucio)
+
+# Guardar
+save(
+  resultats_step50,
+  vars_seleccionades_step,
+  file = "resultats_step50.RData"
+)
 ```
 

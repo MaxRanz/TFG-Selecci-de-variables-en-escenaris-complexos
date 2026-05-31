@@ -1,0 +1,167 @@
+---
+title: "Bootstrap Escenari nul"
+author: "Max Ranz de la Iglesia"
+date: "2026-05-30"
+output: html_document
+---
+
+# Bootstrap nul
+```{r}
+# ── TEST DIAGNÒSTIC - executa això ABANS del bucle complet ──────────────────
+X2_i <- X2[[1]]
+Y2_i <- Y2[[1]]
+
+test_raw <- lapply(1:3, function(j) j) |>   # només 3 simulacions per veure
+  futurize(
+    FUN       = run_simulacio_nul,
+    i         = 1,
+    X2_i      = X2_i,
+    Y2_i      = Y2_i,
+    B         = 2,          # només 2 rèpliques per ser ràpid
+    num_vars2 = num_vars2
+  )
+
+cat("Classe de test_raw:        ", class(test_raw), "\n")
+cat("Longitud de test_raw:      ", length(test_raw), "\n")
+cat("Classe element 1:          ", class(test_raw[[1]]), "\n")
+cat("Longitud element 1:        ", length(test_raw[[1]]), "\n")
+cat("Noms element 1:            ", names(test_raw[[1]]), "\n")
+print(test_raw)
+```
+
+```{r}
+# =========================
+# BOOTSTRAP PARAL·LELITZAT OPTIMITZAT - ESCENARI NUL
+# Sintaxi futurize correcta: lapply(xs, fcn) |> futurize()
+# =========================
+
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_nul_corrAleat.RData")
+
+library(bigstep)
+library(futurize)
+library(progressify)
+
+# ── Configuració paral·lel ──────────────────────────────────────────────────
+plan(multisession, workers = 12)
+
+# ── Paràmetres ──────────────────────────────────────────────────────────────
+iters_boot <- iters * 2
+num_vars2  <- num_vars / 2
+B          <- 50
+
+# ── Bucle principal sobre escenaris ─────────────────────────────────────────
+resultats_fp_boot <- data.frame(
+  N           = integer(),
+  pi          = numeric(),
+  correlation = character(),
+  FP_050      = numeric(),
+  FP_050_pct  = numeric(),
+  FP_075      = numeric(),
+  FP_075_pct  = numeric(),
+  stringsAsFactors = FALSE
+)
+
+system.time({
+  for (i in seq_len(nrow(comb))) {
+
+    N           <- comb[i, "N"]
+    pi          <- comb[i, "pi"]
+    correlation <- as.character(comb[i, "correlation"])
+
+    cat(sprintf("\n=== Escenari %d/%d: N=%s, pi=%s, corr=%s ===\n",
+                i, nrow(comb), N, pi, correlation))
+
+    # Extreure NOMÉS l'escenari actiu → minimitza serialització als workers
+    X2_i <- X2[[i]]
+    Y2_i <- Y2[[i]]
+
+    # ── Sintaxi correcta de futurize: ────────────────────────────────────────
+    # lapply(llista, funció_anonima) |> progressify() |> futurize()
+    # La funció anònima tanca sobre X2_i, Y2_i, B, num_vars2, i
+    resultats_raw <- lapply(1:iters_boot, function(j) {
+
+      library(bigstep)
+
+      X_base <- X2_i[[j]]
+      y_base <- Y2_i[[j]]
+      n_boot <- nrow(X_base)
+
+      seleccio_vars <- matrix(0, nrow = B, ncol = num_vars2)
+      colnames(seleccio_vars) <- paste0("X", 1:num_vars2)
+
+      b_valids <- 0
+
+      for (b in 1:B) {
+        idx_boot <- sample(1:n_boot, n_boot, replace = TRUE)
+        X_boot   <- X_base[idx_boot, ]
+        y_boot   <- y_base[idx_boot]
+
+        tryCatch({
+          d     <- prepare_data(y = y_boot, X_boot, type = "logistic")
+          model <- stepwise(d, crit = aic)
+
+          if (length(model$model) > 0) {
+            idx_sel <- as.numeric(gsub("[^0-9]", "", model$model))
+            idx_sel <- idx_sel[!is.na(idx_sel) & idx_sel >= 1 & idx_sel <= num_vars2]
+            if (length(idx_sel) > 0) {
+              seleccio_vars[b, idx_sel] <- 1
+            }
+          }
+          b_valids <- b_valids + 1
+
+        }, error = function(e) {
+          cat(sprintf("  [WARN] Escenari %d, sim %d, boot %d: %s\n",
+                      i, j, b, conditionMessage(e)))
+        })
+      }
+
+      if (b_valids > 0) {
+        freq_seleccio <- colMeans(seleccio_vars[1:B, , drop = FALSE])
+      } else {
+        cat(sprintf("  [ERROR TOTAL] Escenari %d, sim %d: cap rèplica vàlida\n", i, j))
+        freq_seleccio <- rep(0, num_vars2)
+      }
+
+      cat(sprintf("  [DIAG i=%d j=%d] Vàlids: %d/%d | Max freq: %.2f | FP(>0.5): %d | FP(>0.75): %d\n",
+                  i, j, b_valids, B,
+                  max(freq_seleccio),
+                  sum(freq_seleccio > 0.50),
+                  sum(freq_seleccio > 0.75)))
+
+      # Retornem vector nomenat de longitud 2
+      c(fp_050 = sum(freq_seleccio > 0.50),
+        fp_075 = sum(freq_seleccio > 0.75))
+
+    }) |>
+      progressify() |>
+      futurize(seed = 123)   # seed per reproductibilitat
+
+    # ── Recollir resultats ────────────────────────────────────────────────────
+    # resultats_raw és una llista de iters_boot vectors c(fp_050, fp_075)
+    fp_050 <- sapply(resultats_raw, function(x) x["fp_050"])
+    fp_075 <- sapply(resultats_raw, function(x) x["fp_075"])
+
+    resultats_fp_boot <- rbind(
+      resultats_fp_boot,
+      data.frame(
+        N           = N,
+        pi          = pi,
+        correlation = correlation,
+        FP_050      = mean(fp_050),
+        FP_050_pct  = mean(fp_050) / num_vars2,
+        FP_075      = mean(fp_075),
+        FP_075_pct  = mean(fp_075) / num_vars2,
+        stringsAsFactors = FALSE
+      )
+    )
+
+    save(resultats_fp_boot, file = "resultats_fp_boot_nul_parcial.RData")
+    cat(sprintf("  >>> Escenari %d completat | FP_075 mitjà = %.3f (%.1f%%)\n",
+                i, mean(fp_075), mean(fp_075) / num_vars2 * 100))
+  }
+})
+
+print(resultats_fp_boot)
+save(resultats_fp_boot, file = "resultats_fp_boot_nul_final.RData")
+```
