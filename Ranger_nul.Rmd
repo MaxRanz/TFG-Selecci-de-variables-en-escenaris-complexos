@@ -1,0 +1,155 @@
+---
+title: "Ranger"
+author: "Max Ranz de la Iglesia"
+date: "2026-06-04"
+output: html_document
+---
+
+
+```{r}
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+
+load("dades_escenari_nul_corrAleat.RData")
+
+library(ranger)
+library(futurize)
+library(progressify)
+
+# Paral·lelització
+plan(multisession, workers = 12)
+
+# Funció per a una simulació
+una_iteracio_nul <- function(j, X_esc, Y_esc) {
+
+  library(ranger)
+
+  X_df <- as.data.frame(X_esc[[j]])
+  colnames(X_df) <- paste0("V", seq_len(ncol(X_df)))
+
+  y_fac <- as.factor(Y_esc[[j]])
+
+  tryCatch({
+
+    dades_rf <- cbind(X_df, y = y_fac)
+
+    model_rf <- ranger(
+      y ~ .,
+      data = dades_rf,
+      num.trees = 500,
+      mtry = floor(sqrt(ncol(X_df))),
+      importance = "permutation",
+      num.threads = 1,
+      seed = 123
+    )
+
+    imp <- importance(model_rf)
+
+   sel <- names(imp[imp > 0.001])
+
+    if (length(sel) == 0) {
+      return(0)
+    } else {
+      return(length(sel))
+    }
+
+  }, error = function(e) {
+
+    cat(sprintf(
+      "  [WARN ranger] sim %d: %s\n",
+      j,
+      conditionMessage(e)
+    ))
+
+    return(0)
+  })
+}
+
+# Data frame de resultats
+resultats_fp_ranger <- data.frame(
+  N = integer(),
+  pi = numeric(),
+  correlation = character(),
+  FP = numeric(),
+  FP_percent = numeric(),
+  stringsAsFactors = FALSE
+)
+
+temps_total <- system.time({
+
+  resultats_llista <- vector("list", nrow(comb))
+
+  for (i in seq_len(nrow(comb))) {
+
+    N <- comb$N[i]
+    pi <- comb$pi[i]
+    correlation <- as.character(comb$correlation[i])
+
+    cat(sprintf(
+      "\n====================================\n"
+    ))
+    cat(sprintf(
+      "Escenari %d/%d (N=%s, pi=%s, cor=%s)\n",
+      i, nrow(comb), N, pi, correlation
+    ))
+    cat(sprintf(
+      "====================================\n"
+    ))
+
+    temps_esc <- system.time({
+
+      fp_iter <- lapply(
+        1:iters,
+        una_iteracio_nul,
+        X_esc = X[[i]],
+        Y_esc = Y[[i]]
+      ) |>
+        progressify() |>
+        futurize(seed = 123)
+
+      fp_vec <- unlist(fp_iter)
+
+    })
+
+    resultats_llista[[i]] <- data.frame(
+      N = N,
+      pi = pi,
+      correlation = correlation,
+      FP = mean(fp_vec),
+      FP_percent = mean(fp_vec) / num_vars,
+      stringsAsFactors = FALSE
+    )
+
+    cat(sprintf(
+      "Escenari %d completat en %.2f segons\n",
+      i,
+      temps_esc["elapsed"]
+    ))
+
+    cat(sprintf(
+      "FP mitjà = %.3f | FP%% = %.3f\n",
+      mean(fp_vec),
+      mean(fp_vec) / num_vars
+    ))
+  }
+
+  resultats_fp_ranger <- do.call(
+    rbind,
+    resultats_llista
+  )
+})
+
+cat("\n====================================\n")
+cat(sprintf(
+  "Temps total: %.2f minuts\n",
+  temps_total["elapsed"] / 60
+))
+cat("====================================\n\n")
+
+print(resultats_fp_ranger)
+
+save(
+  resultats_fp_ranger,
+  file = "resultats_fp_ranger_nul.RData"
+)
+```
+
