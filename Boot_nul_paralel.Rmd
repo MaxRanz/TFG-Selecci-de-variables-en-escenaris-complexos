@@ -21,7 +21,7 @@ plan(multisession, workers = 12)
 
 iters_boot <- iters * 2
 num_vars2  <- num_vars / 2
-B          <- 50
+B          <- 20
 
 resultats_fp_boot <- data.frame(
   N           = integer(),
