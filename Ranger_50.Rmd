@@ -1,0 +1,196 @@
+---
+title: "Ranger 50%"
+author: "Max Ranz de la Iglesia"
+date: "2026-06-05"
+output: html_document
+---
+
+# Ranger escenari del 50%
+
+```{r}
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+
+load("dades_escenari_50_corrAleat.RData")
+
+library(ranger)
+library(caret)
+library(futurize)
+library(progressify)
+
+# Paral·lelització
+plan(multisession, workers = 12)
+
+# Funció per una simulació
+una_iteracio_50 <- function(j, X_esc, Y_esc, num_vars, num_sig) {
+
+  library(ranger)
+  library(caret)
+
+  X_df <- as.data.frame(X_esc[[j]])
+  colnames(X_df) <- paste0("V", seq_len(ncol(X_df)))
+
+  y_fac <- as.factor(Y_esc[[j]])
+
+  tryCatch({
+
+    dades_rf <- cbind(X_df, y = y_fac)
+
+    model_rf <- ranger(
+      y ~ .,
+      data = dades_rf,
+      num.trees = 500,
+      mtry = floor(sqrt(ncol(X_df))),
+      importance = "permutation",
+      num.threads = 1,
+      seed = 123
+    )
+
+    imp <- importance(model_rf)
+
+    # llindar de selecció
+    sel_noms <- names(imp[imp > 0.001])
+
+    if(length(sel_noms) == 0) {
+
+      vars_sel <- integer(0)
+
+    } else {
+
+      vars_sel <- as.integer(
+        sub("V", "", sel_noms)
+      )
+
+    }
+
+    metriques(
+      vars_seleccionades = vars_sel,
+      p = 0.5,
+      nv = num_vars
+    )
+
+  }, error = function(e) {
+
+    cat(sprintf(
+      "  [WARN ranger] sim %d: %s\n",
+      j,
+      conditionMessage(e)
+    ))
+
+    c(
+      sensibilitat = NA,
+      especificitat = NA,
+      VPP = NA,
+      VPN = NA,
+      accuracy = NA,
+      net_benefit = NA
+    )
+  })
+}
+
+# Resultats
+resultats_ranger_50 <- data.frame(
+  N             = integer(),
+  pi            = numeric(),
+  correlation   = character(),
+  sensibilitat  = numeric(),
+  especificitat = numeric(),
+  VPP           = numeric(),
+  VPN           = numeric(),
+  accuracy      = numeric(),
+  net_benefit   = numeric(),
+  stringsAsFactors = FALSE
+)
+
+temps_total <- system.time({
+
+  resultats_llista <- vector("list", nrow(comb))
+
+  for(i in seq_len(nrow(comb))) {
+
+    N           <- comb$N[i]
+    pi          <- comb$pi[i]
+    correlation <- as.character(comb$correlation[i])
+
+    cat("\n====================================\n")
+    cat(sprintf(
+      "Escenari %d/%d (N=%s, pi=%s, cor=%s)\n",
+      i, nrow(comb), N, pi, correlation
+    ))
+    cat("====================================\n")
+
+    temps_esc <- system.time({
+
+      metr_iter <- lapply(
+        1:iters,
+        una_iteracio_50,
+        X_esc = X[[i]],
+        Y_esc = Y[[i]],
+        num_vars = num_vars,
+        num_sig = num_sig
+      ) |>
+        progressify() |>
+        futurize(seed = 123)
+
+    })
+
+    metr_mat <- do.call(rbind, metr_iter)
+
+    metr_mat <- as.data.frame(metr_mat)
+
+    resultats_llista[[i]] <- data.frame(
+      N             = N,
+      pi            = pi,
+      correlation   = correlation,
+      sensibilitat  = mean(metr_mat$sensibilitat,
+                            na.rm = TRUE),
+      especificitat = mean(metr_mat$especificitat,
+                            na.rm = TRUE),
+      VPP           = mean(metr_mat$VPP,
+                            na.rm = TRUE),
+      VPN           = mean(metr_mat$VPN,
+                            na.rm = TRUE),
+      accuracy      = mean(metr_mat$accuracy,
+                            na.rm = TRUE),
+      net_benefit   = mean(metr_mat$net_benefit,
+                            na.rm = TRUE),
+      stringsAsFactors = FALSE
+    )
+
+    cat(sprintf(
+      "Escenari %d completat en %.2f segons\n",
+      i,
+      temps_esc["elapsed"]
+    ))
+
+    cat(sprintf(
+      "Sens=%.3f | Espec=%.3f | VPP=%.3f | VPN=%.3f | Acc=%.3f | NB=%.3f\n",
+      resultats_llista[[i]]$sensibilitat,
+      resultats_llista[[i]]$especificitat,
+      resultats_llista[[i]]$VPP,
+      resultats_llista[[i]]$VPN,
+      resultats_llista[[i]]$accuracy,
+      resultats_llista[[i]]$net_benefit
+    ))
+  }
+
+  resultats_ranger_50 <- do.call(
+    rbind,
+    resultats_llista
+  )
+})
+
+cat("\n====================================\n")
+cat(sprintf(
+  "Temps total: %.2f minuts\n",
+  temps_total["elapsed"]/60
+))
+cat("====================================\n\n")
+
+print(resultats_ranger_50)
+
+save(
+  resultats_ranger_50,
+  file = "resultats_ranger_50.RData"
+)
+```
+
