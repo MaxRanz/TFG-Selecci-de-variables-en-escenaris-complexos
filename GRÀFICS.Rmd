@@ -1,0 +1,418 @@
+---
+title: "Gràfics per a la visualització dels resultats"
+author: "Max Ranz de la Iglesia"
+date: "2026-06-04"
+output: html_document
+---
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(scales)
+
+# Carpeta de sortida
+dir.create("plots", showWarnings = FALSE)
+
+# Paleta de colors consistent per a tots els gràfics
+COLORS_METODES <- c(
+  "Stepwise"      = "#E63946",
+  "Bootstrap"     = "#457B9D",
+  "Lasso"         = "#2A9D8F",
+  "Elastic Net"   = "#E9C46A",
+  "Random Forest" = "#F4A261",
+  "Boruta"        = "#9B5DE5"
+)
+
+COLORS_CORR <- c(
+  "0"      = "#264653",
+  "0.1"    = "#2A9D8F",
+  "0.3"    = "#E9C46A",
+  "random" = "#E76F51"
+)
+```
+
+# Preparem les dades
+```{r}
+#carragar tots es RDatas
+
+setwd("~/RESULTATS_TFG")
+
+# Escenari 50%
+load("resultats_step50_2.RData")      
+load("resultats_boot_50_final.RData")
+load("lasso50_v2_2.RData")
+load("resultats_enet_50_2.RData")
+load("resultats_fp_rf_randomForest_nul.RData")
+load("resultats_boruta_50_correlacio.RData")
+
+# Escenari nul
+load("resultats_sw_nul_2.RData")
+load("resultats_fp_boot_nul_final_B20.RData")
+load("resultats_fp_lasso_nul_aleat.RData")
+load("resultats_fp_enet_nul_2.RData")
+load("resultats_rf_50_1salt.RData")
+load("resultats_fp_boruta_nul.RData")
+
+
+```
+
+```{r}
+# Important: tenim un únic valor per escenari (mitjana)
+
+# Escenari 50%
+prep_50 <- function(df, nom_metode) {
+  df %>%
+    mutate(metode = nom_metode,
+           correlation = as.character(correlation)) %>%
+    pivot_longer(
+      cols      = c(Sensibilitat, Especificitat, VPP, VPN, Accuracy, NetBenefit),
+      names_to  = "metrica",
+      values_to = "valor"
+    )
+}
+
+summary_total <- bind_rows(
+  prep_50(resultats_step50,   "Stepwise"),
+  prep_50(resultats_boot_50,   "Bootstrap"),
+  prep_50(resultats_lasso,  "Lasso"),
+  prep_50(resultats_enet,   "Elastic Net"),
+  prep_50(resultats_rf,     "Random Forest"),
+  prep_50(resultats_boruta, "Boruta")
+) %>%
+  mutate(
+    metode      = factor(metode, levels = names(COLORS_METODES)),
+    correlation = factor(correlation, levels = c("0", "0.1", "0.3", "random")),
+    N           = as.character(N),
+    pi          = as.character(pi)
+  )
+
+# Escenari nul
+prep_nul <- function(df, nom_metode) {
+  df %>%
+    mutate(metode      = nom_metode,
+           correlation = as.character(correlation))
+}
+
+fp_total <- bind_rows(
+  prep_nul(resultats_sw,     "Stepwise"),
+  prep_nul(resultats_fp_boot,   "Bootstrap"),
+  prep_nul(resultats_fp_lasso,  "Lasso"),
+  prep_nul(resultats_fp_enet,   "Elastic Net"),
+  prep_nul(resultats_fp_rf,     "Random Forest"),
+  prep_nul(resultats_boruta, "Boruta")
+) %>%
+  mutate(
+    metode      = factor(metode, levels = names(COLORS_METODES)),
+    correlation = factor(correlation, levels = c("0", "0.1", "0.3", "random")),
+    N           = as.character(N),
+    pi          = as.character(pi)
+  )
+```
+
+# Escenari 50%
+
+## Forest Plots
+```{r}
+forest_plot <- function(data, metrica_sel, linia_ref = NULL) {
+
+  df <- data %>%
+    filter(metrica == metrica_sel)
+
+  # s'ordenen els mètodes per valor mitjà global (de menor a major)
+  ordre <- df %>%
+    group_by(metode) %>%
+    summarise(m = mean(valor, na.rm = TRUE), .groups = "drop") %>%
+    arrange(m) %>%
+    pull(metode)
+  df$metode <- factor(df$metode, levels = ordre)
+
+  p <- ggplot(df, aes(x = valor, y = metode,
+                      color = correlation,
+                      shape = correlation)) +
+    geom_point(size = 4,
+               position = position_dodge(width = 0.6)) +
+    facet_grid(
+      rows = vars(paste0("pi = ", pi)),
+      cols = vars(paste0("N = ", N))
+    ) +
+    scale_color_manual(
+      values = COLORS_CORR,
+      name   = "Correlació",
+      labels = c("0" = "ρ = 0", "0.1" = "ρ = 0.1",
+                 "0.3" = "ρ = 0.3", "random" = "ρ aleatòria")
+    ) +
+    scale_shape_manual(
+      values = c("0" = 16, "0.1" = 17, "0.3" = 15, "random" = 18),
+      name   = "Correlació",
+      labels = c("0" = "ρ = 0", "0.1" = "ρ = 0.1",
+                 "0.3" = "ρ = 0.3", "random" = "ρ aleatòria")
+    ) +
+    scale_x_continuous(limits = c(0, 1), labels = percent_format()) +
+    labs(
+      title = paste0("Forest plot — ", metrica_sel),
+      x     = metrica_sel,
+      y     = NULL
+    ) +
+    theme_bw(base_size = 12) +
+    theme(
+      plot.title       = element_text(face = "bold", size = 14),
+      strip.background = element_rect(fill = "#F0F4F8"),
+      strip.text       = element_text(face = "bold"),
+      legend.position  = "bottom",
+      panel.grid.minor = element_blank()
+    )
+
+  if (!is.null(linia_ref) && !is.na(linia_ref)) {
+    p <- p + geom_vline(xintercept = linia_ref,
+                        linetype = "dashed",
+                        color = "grey50",
+                        linewidth = 0.6)
+  }
+
+  return(p)
+}
+
+# Generem i guardem un forest plot per cada mètrica
+metriques_50 <- c("Sensibilitat", "Especificitat", "VPP", "VPN",
+                  "Accuracy", "NetBenefit")
+refs <- c(Sensibilitat = 0.5, Especificitat = 0.5, VPP = 0.5,
+          VPN = 0.5, Accuracy = 0.5, NetBenefit = 0)
+
+for (m in metriques_50) {
+  p <- forest_plot(summary_total, m, linia_ref = refs[m])
+  ggsave(paste0("plots/forest_", tolower(m), ".png"),
+         plot = p, width = 10, height = 7, dpi = 300, bg = "white")
+  print(p)
+}
+``` 
+
+
+## Heatmaps
+```{r}
+heatmap_metrica <- function(data, metrica_sel) {
+
+  df <- data %>%
+    filter(metrica == metrica_sel) %>%
+    mutate(
+      escenari = paste0("N=", N, "\npi=", pi, "\nρ=", correlation)
+    )
+
+  # ordenem de manera descendent
+  ordre_metode <- df %>%
+    group_by(metode) %>%
+    summarise(m = mean(valor, na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(m)) %>% pull(metode)
+
+  ordre_escenari <- df %>%
+    distinct(escenari, N, pi, correlation) %>%
+    arrange(N, pi, correlation) %>%
+    pull(escenari)
+
+  df$metode   <- factor(df$metode, levels = ordre_metode)
+  df$escenari <- factor(df$escenari, levels = ordre_escenari)
+
+  ggplot(df, aes(x = escenari, y = metode, fill = valor)) +
+    geom_tile(color = "white", linewidth = 0.6) +
+    geom_text(aes(label = sprintf("%.3f", valor)),
+              size = 3, color = "black") +
+    scale_fill_gradient2(
+      low      = "#D62828",
+      mid      = "#F7F7F7",
+      high     = "#1B4332",
+      midpoint = 0.5,
+      limits   = c(0, 1),
+      name     = "Valor"
+    ) +
+    labs(
+      title = paste0("Heatmap — ", metrica_sel),
+      x     = "Escenari (N, pi, correlació)",
+      y     = "Mètode"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title  = element_text(face = "bold", size = 13),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+      panel.grid  = element_blank()
+    )
+}
+
+for (m in metriques_50) {
+  p <- heatmap_metrica(summary_total, m)
+  ggsave(paste0("plots/heatmap_", tolower(m), ".png"),
+         plot = p, width = 14, height = 5, dpi = 300, bg = "white")
+  print(p)
+}
+
+# Heatmap combinat (totes les mètriques excepte NetBenefit)
+heatmap_combinat <- summary_total %>%
+  filter(metrica != "NetBenefit") %>%
+  mutate(
+    escenari = paste0("N=", N, ", pi=", pi, ", ρ=", correlation),
+    metrica  = factor(metrica,
+                      levels = c("Accuracy", "Sensibilitat",
+                                 "Especificitat", "VPP", "VPN"))
+  ) %>%
+  ggplot(aes(x = escenari, y = metode, fill = valor)) +
+  geom_tile(color = "white", linewidth = 0.4) +
+  geom_text(aes(label = sprintf("%.2f", valor)),
+            size = 2.5, color = "black") +
+  scale_fill_gradient2(
+    low = "#D62828", mid = "#F7F7F7", high = "#1B4332",
+    midpoint = 0.5, limits = c(0, 1), name = "Valor"
+  ) +
+  facet_wrap(~metrica, ncol = 1) +
+  labs(
+    title = "Heatmap combinat — totes les mètriques",
+    x     = "Escenari",
+    y     = "Mètode"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    plot.title  = element_text(face = "bold", size = 13),
+    axis.text.x = element_text(angle = 55, hjust = 1, size = 7),
+    strip.text  = element_text(face = "bold"),
+    panel.grid  = element_blank()
+  )
+
+ggsave("plots/heatmap_combinat.png",
+       plot = heatmap_combinat, width = 18, height = 16,
+       dpi = 300, bg = "white")
+print(heatmap_combinat)
+
+```
+
+# Escenari nul
+
+## Gràfics de barres per mètode
+```{r}
+p_fp_barres <- ggplot(fp_total,
+                      aes(x = metode, y = FP_percent * 100,
+                          fill = correlation)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_hline(yintercept = 5,
+             linetype = "dashed", color = "red", linewidth = 0.8) +
+  annotate("text", x = 0.4, y = 5.5,
+           label = "Llindar 5%", color = "red",
+           hjust = 0, size = 3.2) +
+  facet_grid(
+    rows = vars(paste0("pi = ", pi)),
+    cols = vars(paste0("N = ", N))
+  ) +
+  scale_fill_manual(
+    values = COLORS_CORR,
+    name   = "Correlació",
+    labels = c("0" = "ρ = 0", "0.1" = "ρ = 0.1",
+               "0.3" = "ρ = 0.3", "random" = "ρ aleatòria")
+  ) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  labs(
+    title = "Falsos positius (%) — Escenari nul",
+    x     = "Mètode",
+    y     = "FP (%)"
+  ) +
+  theme_bw(base_size = 11) +
+  theme(
+    plot.title       = element_text(face = "bold", size = 13),
+    axis.text.x      = element_text(angle = 35, hjust = 1),
+    strip.background = element_rect(fill = "#F0F4F8"),
+    strip.text       = element_text(face = "bold"),
+    legend.position  = "bottom"
+  )
+
+ggsave("plots/fp_barres.png",
+       plot = p_fp_barres, width = 12, height = 8,
+       dpi = 300, bg = "white")
+print(p_fp_barres)
+```
+
+
+## Forest plot de FP
+```{r}
+p_fp_forest <- ggplot(fp_total,
+                      aes(x = FP_percent * 100, y = metode,
+                          color = correlation,
+                          shape = correlation)) +
+  geom_vline(xintercept = 5,
+             linetype = "dashed", color = "red", linewidth = 0.7) +
+  geom_point(size = 4,
+             position = position_dodge(width = 0.6)) +
+  facet_grid(
+    rows = vars(paste0("pi = ", pi)),
+    cols = vars(paste0("N = ", N))
+  ) +
+  scale_color_manual(
+    values = COLORS_CORR,
+    name   = "Correlació",
+    labels = c("0" = "ρ = 0", "0.1" = "ρ = 0.1",
+               "0.3" = "ρ = 0.3", "random" = "ρ aleatòria")
+  ) +
+  scale_shape_manual(
+    values = c("0" = 16, "0.1" = 17, "0.3" = 15, "random" = 18),
+    name   = "Correlació",
+    labels = c("0" = "ρ = 0", "0.1" = "ρ = 0.1",
+               "0.3" = "ρ = 0.3", "random" = "ρ aleatòria")
+  ) +
+  scale_x_continuous(labels = function(x) paste0(x, "%")) +
+  labs(
+    title = "Forest plot — Falsos positius (%) — Escenari nul",
+    x     = "FP (%)",
+    y     = NULL
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    plot.title       = element_text(face = "bold", size = 13),
+    strip.background = element_rect(fill = "#F0F4F8"),
+    strip.text       = element_text(face = "bold"),
+    legend.position  = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+ggsave("plots/fp_forest.png",
+       plot = p_fp_forest, width = 11, height = 7,
+       dpi = 300, bg = "white")
+print(p_fp_forest)
+
+```
+
+## Heatmap de FP
+```{r}
+p_fp_heatmap <- fp_total %>%
+  mutate(
+    escenari = paste0("N=", N, "\npi=", pi, "\nρ=", correlation)
+  ) %>%
+  {
+    ordre_esc <- distinct(., escenari, N, pi, correlation) %>%
+      arrange(N, pi, correlation) %>% pull(escenari)
+    mutate(., escenari = factor(escenari, levels = ordre_esc))
+  } %>%
+  ggplot(aes(x = escenari, y = metode, fill = FP_percent * 100)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_text(aes(label = sprintf("%.1f%%", FP_percent * 100)),
+            size = 3.2, color = "black") +
+  scale_fill_gradient2(
+    low      = "#1B4332",
+    mid      = "#F7F7F7",
+    high     = "#D62828",
+    midpoint = 5,
+    name     = "FP (%)"
+  ) +
+  labs(
+    title = "Heatmap — Falsos positius (%) — Escenari nul",
+    x     = "Escenari (N, pi, correlació)",
+    y     = "Mètode"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title  = element_text(face = "bold", size = 13),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    panel.grid  = element_blank()
+  )
+
+ggsave("plots/fp_heatmap.png",
+       plot = p_fp_heatmap, width = 16, height = 5,
+       dpi = 300, bg = "white")
+print(p_fp_heatmap)
+```
+
