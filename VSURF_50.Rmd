@@ -1,0 +1,101 @@
+---
+title: "VSURF 50%"
+author: "Max Ranz de la Iglesia"
+date: "2026-06-06"
+output: html_document
+---
+```{r}
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+load("dades_escenari_50_corrAleat.RData")
+
+library(VSURF)
+library(futurize)
+library(progressify)
+
+plan(multisession, workers = 12)
+
+una_iteracio_50 <- function(j, X_esc, Y_esc, num_vars) {
+  library(VSURF)
+  library(caret)
+
+  X_df  <- as.data.frame(X_esc[[j]])
+  y_fac <- as.factor(Y_esc[[j]])
+
+  tryCatch({
+    model_vsurf <- VSURF(x = X_df, y = y_fac,
+                         parallel = FALSE,
+                         verbose  = FALSE)
+
+    # Índexs de les variables seleccionades (ja són numèrics directament)
+    idx <- model_vsurf$varselect.interp
+    idx <- idx[!is.na(idx) & idx >= 1 & idx <= num_vars]
+
+    list(idx = idx, metrics = metriques(idx, nv = num_vars))
+
+  }, error = function(e) {
+    cat(sprintf("  [WARN VSURF] sim %d: %s\n", j, conditionMessage(e)))
+    list(idx = integer(0), metrics = metriques(integer(0), nv = num_vars))
+  })
+}
+
+resultats_vsurf <- data.frame(
+  N = integer(), pi = numeric(), correlation = character(),
+  Sensibilitat = numeric(), Especificitat = numeric(),
+  VPP = numeric(), VPN = numeric(),
+  Accuracy = numeric(), NetBenefit = numeric(),
+  stringsAsFactors = FALSE
+)
+
+vars_seleccionades_vsurf <- list()
+
+system.time({
+  for (i in seq_len(nrow(comb))) {
+
+    N           <- comb$N[i]
+    pi          <- comb$pi[i]
+    correlation <- as.character(comb$correlation[i])
+
+    cat(sprintf("Escenari %d/%d (N=%s, pi=%s, cor=%s)\n",
+                i, nrow(comb), N, pi, correlation))
+
+    resultats_iter <- lapply(1:iters, una_iteracio_50,
+                             X_esc    = X[[i]],
+                             Y_esc    = Y[[i]],
+                             num_vars = num_vars) |>
+                      progressify() |>
+                      futurize(seed = 123)
+
+    metrics_vs  <- lapply(resultats_iter, function(x) x$metrics)
+    vars_bin_vs <- matrix(0, nrow = iters, ncol = num_vars)
+    for (j in 1:iters) {
+      idx <- resultats_iter[[j]]$idx
+      if (length(idx) > 0) vars_bin_vs[j, idx] <- 1
+    }
+
+    resum <- function(ml, m) mean(sapply(ml, function(x) x[m]), na.rm = TRUE)
+
+    resultats_vsurf <- rbind(
+      resultats_vsurf,
+      data.frame(
+        N             = N,
+        pi            = pi,
+        correlation   = correlation,
+        Sensibilitat  = resum(metrics_vs, "sensibilitat"),
+        Especificitat = resum(metrics_vs, "especificitat"),
+        VPP           = resum(metrics_vs, "VPP"),
+        VPN           = resum(metrics_vs, "VPN"),
+        Accuracy      = resum(metrics_vs, "accuracy"),
+        NetBenefit    = resum(metrics_vs, "net_benefit"),
+        stringsAsFactors = FALSE
+      )
+    )
+
+    vars_seleccionades_vsurf[[i]] <- vars_bin_vs
+  }
+})
+
+print(resultats_vsurf)
+save(resultats_vsurf, vars_seleccionades_vsurf,
+     file = "resultats_vsurf_50_correlacio.RData")
+```
+
