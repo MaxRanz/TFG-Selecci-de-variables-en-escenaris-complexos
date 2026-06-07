@@ -1,0 +1,167 @@
+---
+title: "Random Forest millorat"
+author: "Max Ranz de la Iglesia"
+date: "2026-06-07"
+output: html_document
+---
+
+#  Random Forest millorat – Escenari 50%
+
+```{r}
+#  Millores aplicades: ntree=1000, mtry=2*sqrt(p), salt normalitzat, paral·lelització
+
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_50_corrAleat.RData")
+
+library(randomForest)
+library(future.apply)
+library(progressr)
+
+plan(multisession, workers = parallel::detectCores() - 1)
+
+# ── Criteri de tall: salt normalitzat ─────────
+escoger_rf_robust <- function(x, porcentage_min = 3, min_vars = 1) {
+  if (length(x) < 2 || max(x, na.rm = TRUE) < porcentage_min) return(NA)
+  
+  salts      <- abs(diff(x))
+  salts_norm <- salts / (abs(x[-length(x)]) + 1e-10)
+  
+  punt_tall  <- which.max(salts_norm)
+  sel        <- names(x)[1:max(punt_tall, min_vars)]
+  return(sel)
+}
+
+# ── Funció per a una simulació ─────────────────
+simular_rf <- function(j, X_i, Y_i, num_vars) {
+  X_df  <- as.data.frame(X_i[[j]])
+  y_fac <- as.factor(Y_i[[j]])
+  
+  vars_bin <- rep(0, num_vars)
+  met      <- metriques(integer(0), nv = num_vars)
+  
+  tryCatch({
+    model_rf <- randomForest(
+      x          = X_df,
+      y          = y_fac,
+      ntree      = 1000,
+      mtry       = max(floor(sqrt(num_vars) * 2), 10),
+      importance = TRUE,
+      replace    = TRUE
+    )
+    
+    # Tornem a MDA directe, sense combinació
+    imp_mda <- importance(model_rf, type = 1)[, 1]
+    
+    # Només variables amb importància positiva abans d'ordenar
+    imp_pos <- imp_mda[imp_mda > 0]
+    
+    if (length(imp_pos) == 0) {
+      met <- metriques(integer(0), nv = num_vars)
+      return(list(vars_bin = vars_bin, met = met))
+    }
+    
+    imp_ord <- sort(imp_pos, decreasing = TRUE)
+    
+    # Salt normalitzat sobre MDA directe
+    escoger_rf_robust <- function(x, min_vars = 1) {
+      if (length(x) < 2) return(names(x))
+      salts      <- abs(diff(x))
+      salts_norm <- salts / (abs(x[-length(x)]) + 1e-10)
+      punt_tall  <- which.max(salts_norm)
+      return(names(x)[1:max(punt_tall, min_vars)])
+    }
+    
+    seleccionades <- escoger_rf_robust(imp_ord)
+    
+    if (length(seleccionades) >= 1 && !is.na(seleccionades[1])) {
+      idx_sel           <- as.numeric(gsub("[^0-9]", "", seleccionades))
+      idx_sel           <- idx_sel[!is.na(idx_sel) & idx_sel >= 1 & idx_sel <= num_vars]
+      vars_bin[idx_sel] <- 1
+      met               <- metriques(idx_sel, nv = num_vars)
+    }
+    
+  }, error = function(e) {
+    cat(sprintf("  [WARN] sim %d: %s\n", j, conditionMessage(e)))
+  })
+  
+  list(vars_bin = vars_bin, met = met)
+}
+# ── Inicialització de resultats ────────────────
+resultats_rf_millorat          <- data.frame(
+  N             = integer(),
+  pi            = numeric(),
+  correlation   = character(),
+  Sensibilitat  = numeric(),
+  Especificitat = numeric(),
+  VPP           = numeric(),
+  VPN           = numeric(),
+  Accuracy      = numeric(),
+  NetBenefit    = numeric()
+)
+vars_seleccionades_rf_millorat <- list()
+
+# ── Bucle principal ────────────────────────────
+with_progress({
+  p <- progressor(steps = nrow(comb) * iters)
+  
+  for (i in seq_len(nrow(comb))) {
+    N           <- comb[i, "N"]
+    pi          <- comb[i, "pi"]
+    correlation <- comb[i, "correlation"]
+    
+    X_i <- X[[i]]
+    Y_i <- Y[[i]]
+    
+    resultats_sim <- future_lapply(
+      seq_len(iters),
+      FUN = function(j) {
+        p(sprintf("Escenari %d, sim %d", i, j))
+        simular_rf(j, X_i, Y_i, num_vars)
+      },
+      future.seed     = TRUE,
+      future.packages = c("randomForest", "caret")
+    )
+    
+    # Extreure resultats
+    vars_mat <- do.call(rbind, lapply(resultats_sim, `[[`, "vars_bin"))
+    metrics  <- lapply(resultats_sim, `[[`, "met")
+    
+    sens  <- mean(sapply(metrics, function(x) x["sensibilitat"]),  na.rm = TRUE)
+    espec <- mean(sapply(metrics, function(x) x["especificitat"]), na.rm = TRUE)
+    vpp   <- mean(sapply(metrics, function(x) x["VPP"]),           na.rm = TRUE)
+    vpn   <- mean(sapply(metrics, function(x) x["VPN"]),           na.rm = TRUE)
+    acc   <- mean(sapply(metrics, function(x) x["accuracy"]),      na.rm = TRUE)
+    nb    <- mean(sapply(metrics, function(x) x["net_benefit"]),   na.rm = TRUE)
+    
+    message(sprintf(
+      "\n✔ Escenari %d/%d completat  [N=%d | pi=%.1f | corr=%s]\n  Sens=%.3f  Espec=%.3f  VPP=%.3f  VPN=%.3f  Acc=%.3f  NB=%.4f",
+      i, nrow(comb), N, pi, correlation,
+      sens, espec, vpp, vpn, acc, nb
+    ))
+    
+    resultats_rf_millorat <- rbind(
+      resultats_rf_millorat,
+      data.frame(
+        N             = N,
+        pi            = pi,
+        correlation   = correlation,
+        Sensibilitat  = sens,
+        Especificitat = espec,
+        VPP           = vpp,
+        VPN           = vpn,
+        Accuracy      = acc,
+        NetBenefit    = nb
+      )
+    )
+    vars_seleccionades_rf_millorat[[i]] <- vars_mat
+  }
+})
+
+# ── Guardem ────────────────────────────────────
+print(resultats_rf_millorat)
+save(resultats_rf_millorat, vars_seleccionades_rf_millorat,
+     file = "resultats_rf_millorat_50.RData")
+
+plan(sequential)
+```
+
