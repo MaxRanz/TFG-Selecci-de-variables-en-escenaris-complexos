@@ -19,7 +19,7 @@ library(progressr)
 
 plan(multisession, workers = parallel::detectCores() - 1)
 
-# ── Criteri de tall: salt normalitzat ─────────
+# Criteri de tall: salt normalitzat
 escoger_rf_robust <- function(x, porcentage_min = 3, min_vars = 1) {
   if (length(x) < 2 || max(x, na.rm = TRUE) < porcentage_min) return(NA)
   
@@ -31,7 +31,7 @@ escoger_rf_robust <- function(x, porcentage_min = 3, min_vars = 1) {
   return(sel)
 }
 
-# ── Funció per a una simulació ─────────────────
+# simulació
 simular_rf <- function(j, X_i, Y_i, num_vars) {
   X_df  <- as.data.frame(X_i[[j]])
   y_fac <- as.factor(Y_i[[j]])
@@ -49,7 +49,7 @@ simular_rf <- function(j, X_i, Y_i, num_vars) {
       replace    = TRUE
     )
     
-    # Tornem a MDA directe, sense combinació
+    # MDA 
     imp_mda <- importance(model_rf, type = 1)[, 1]
     
     # Només variables amb importància positiva abans d'ordenar
@@ -86,7 +86,6 @@ simular_rf <- function(j, X_i, Y_i, num_vars) {
   
   list(vars_bin = vars_bin, met = met)
 }
-# ── Inicialització de resultats ────────────────
 resultats_rf_millorat          <- data.frame(
   N             = integer(),
   pi            = numeric(),
@@ -100,7 +99,7 @@ resultats_rf_millorat          <- data.frame(
 )
 vars_seleccionades_rf_millorat <- list()
 
-# ── Bucle principal ────────────────────────────
+# Bucle 
 with_progress({
   p <- progressor(steps = nrow(comb) * iters)
   
@@ -122,7 +121,6 @@ with_progress({
       future.packages = c("randomForest", "caret")
     )
     
-    # Extreure resultats
     vars_mat <- do.call(rbind, lapply(resultats_sim, `[[`, "vars_bin"))
     metrics  <- lapply(resultats_sim, `[[`, "met")
     
@@ -157,7 +155,6 @@ with_progress({
   }
 })
 
-# ── Guardem ────────────────────────────────────
 print(resultats_rf_millorat)
 save(resultats_rf_millorat, vars_seleccionades_rf_millorat,
      file = "resultats_rf_millorat_50.RData")
