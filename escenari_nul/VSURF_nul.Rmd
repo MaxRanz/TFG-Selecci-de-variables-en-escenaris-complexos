@@ -1,0 +1,72 @@
+---
+title: "Random forest amb VSURF"
+author: "Max Ranz de la Iglesia"
+date: "2026-06-04"
+output: html_document
+---
+
+```{r}
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+load("dades_escenari_nul_corrAleat.RData")
+
+library(VSURF)
+
+una_iteracio_nul <- function(j, X_esc, Y_esc) {
+  X_df  <- as.data.frame(X_esc[[j]])
+  y_fac <- as.factor(Y_esc[[j]])
+
+  tryCatch({
+    model_vsurf <- VSURF(x = X_df, y = y_fac,
+                         parallel = FALSE,
+                         verbose  = FALSE)
+    sel <- model_vsurf$varselect.interp
+    ifelse(length(sel) == 0, 0, length(sel))
+  }, error = function(e) {
+    cat(sprintf("  [WARN VSURF] sim %d: %s\n", j, conditionMessage(e)))
+    0
+  })
+}
+
+resultats_fp_vsurf <- data.frame(
+  N           = integer(),
+  pi          = numeric(),
+  correlation = character(),
+  FP          = numeric(),
+  FP_percent  = numeric(),
+  stringsAsFactors = FALSE
+)
+
+system.time({
+  for (i in seq_len(nrow(comb))) {
+
+    N           <- comb$N[i]
+    pi          <- comb$pi[i]
+    correlation <- as.character(comb$correlation[i])
+
+    cat(sprintf("Escenari %d/%d (N=%s, pi=%s, cor=%s)\n",
+                i, nrow(comb), N, pi, correlation))
+
+    fp_vec <- numeric(iters)
+    for (j in 1:iters) {
+      cat(sprintf("  Simulació %d/%d\n", j, iters))
+      fp_vec[j] <- una_iteracio_nul(j, X[[i]], Y[[i]])
+    }
+
+    resultats_fp_vsurf <- rbind(
+      resultats_fp_vsurf,
+      data.frame(
+        N           = N,
+        pi          = pi,
+        correlation = correlation,
+        FP          = mean(fp_vec),
+        FP_percent  = mean(fp_vec) / num_vars,
+        stringsAsFactors = FALSE
+      )
+    )
+  }
+})
+
+print(resultats_fp_vsurf)
+save(resultats_fp_vsurf, file = "resultats_fp_vsurf_nul.RData")
+```
+
