@@ -1,0 +1,234 @@
+---
+title: "Untitled"
+author: "Max Ranz de la Iglesia"
+date: "2026-06-08"
+output: html_document
+---
+
+```{r}
+# =============================================================
+# RANGER - ESCENARI 50% - CERCA D'HIPERPARÀMETRES
+# =============================================================
+
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+
+load("dades_escenari_50_corrAleat.RData")
+
+library(ranger)
+library(caret)
+library(futurize)
+library(progressify)
+library(dplyr)
+
+# -------------------------------------------------------------
+# PARAL·LELITZACIÓ
+# -------------------------------------------------------------
+plan(multisession, workers = 12)
+
+# -------------------------------------------------------------
+# GRAELLA D'HIPERPARÀMETRES
+# -------------------------------------------------------------
+hiper <- expand.grid(
+  num.trees  = c(500, 1000),
+  mtry_tipus = c("sqrt", "p/3", "p/2"),
+  llindar    = c("zero", "mediana", "mean_sd"),
+  stringsAsFactors = FALSE
+)
+
+cat(sprintf("Total combinacions hiperparàmetres: %d\n", nrow(hiper)))
+cat(sprintf("Total escenaris (N x pi x cor):     %d\n", nrow(comb)))
+cat(sprintf("Total forests a entrenar:            %d\n",
+            nrow(hiper) * nrow(comb) * iters))
+
+# -------------------------------------------------------------
+# FUNCIÓ D'UNA ITERACIÓ
+# -------------------------------------------------------------
+una_iteracio_50 <- function(j, X_esc, Y_esc, num_vars, num_sig,
+                             num.trees, mtry_tipus, llindar) {
+
+  library(ranger)
+
+  X_df  <- as.data.frame(X_esc[[j]])
+  colnames(X_df) <- paste0("V", seq_len(ncol(X_df)))
+  y_fac <- as.factor(Y_esc[[j]])
+  p     <- ncol(X_df)
+
+  mtry_val <- switch(mtry_tipus,
+    "sqrt" = floor(sqrt(p)),
+    "p/3"  = floor(p / 3),
+    "p/2"  = floor(p / 2)
+  )
+
+  tryCatch({
+
+    dades_rf <- cbind(X_df, y = y_fac)
+
+    model_rf <- ranger(
+      y ~ .,
+      data        = dades_rf,
+      num.trees   = num.trees,
+      mtry        = mtry_val,
+      importance  = "permutation",
+      num.threads = 1,
+      seed        = 123 + j
+    )
+
+    imp <- importance(model_rf)
+
+    llindar_val <- switch(llindar,
+      "zero"    = 0,
+      "mediana" = median(imp),
+      "mean_sd" = mean(imp) + sd(imp)
+    )
+
+    sel_noms <- names(imp[imp > llindar_val])
+
+    vars_sel <- if (length(sel_noms) == 0) {
+      integer(0)
+    } else {
+      as.integer(sub("V", "", sel_noms))
+    }
+
+    metriques(
+      vars_seleccionades = vars_sel,
+      p  = 0.5,
+      nv = num_vars
+    )
+
+  }, error = function(e) {
+
+    cat(sprintf("  [WARN ranger] sim %d: %s\n", j, conditionMessage(e)))
+
+    c(sensibilitat = NA, especificitat = NA, VPP = NA,
+      VPN = NA, accuracy = NA, net_benefit = NA)
+  })
+}
+
+# -------------------------------------------------------------
+# BUCLE PRINCIPAL
+# -------------------------------------------------------------
+resultats_llista <- vector("list", nrow(comb) * nrow(hiper))
+idx <- 1
+
+temps_total <- system.time({
+
+  for (i in seq_len(nrow(comb))) {
+
+    N           <- comb$N[i]
+    pi          <- comb$pi[i]
+    correlation <- as.character(comb$correlation[i])
+
+    cat("\n====================================\n")
+    cat(sprintf(
+      "ESCENARI %d/%d (N=%s, pi=%s, cor=%s)\n",
+      i, nrow(comb), N, pi, correlation
+    ))
+    cat("====================================\n")
+
+    for (h in seq_len(nrow(hiper))) {
+
+      nt <- hiper$num.trees[h]
+      mt <- hiper$mtry_tipus[h]
+      ll <- hiper$llindar[h]
+
+      cat(sprintf(
+        "  Hiper %d/%d | trees=%d, mtry=%s, llindar=%s\n",
+        h, nrow(hiper), nt, mt, ll
+      ))
+
+      temps_hiper <- system.time({
+
+        metr_iter <- lapply(
+          1:iters,
+          una_iteracio_50,
+          X_esc      = X[[i]],
+          Y_esc      = Y[[i]],
+          num_vars   = num_vars,
+          num_sig    = num_sig,
+          num.trees  = nt,
+          mtry_tipus = mt,
+          llindar    = ll
+        ) |>
+          progressify() |>
+          futurize(seed = 123)
+
+      })
+
+      metr_mat <- as.data.frame(do.call(rbind, metr_iter))
+
+      resultats_llista[[idx]] <- data.frame(
+        N             = N,
+        pi            = pi,
+        correlation   = correlation,
+        num.trees     = nt,
+        mtry_tipus    = mt,
+        llindar       = ll,
+        sensibilitat  = mean(metr_mat$sensibilitat,  na.rm = TRUE),
+        especificitat = mean(metr_mat$especificitat, na.rm = TRUE),
+        VPP           = mean(metr_mat$VPP,           na.rm = TRUE),
+        VPN           = mean(metr_mat$VPN,           na.rm = TRUE),
+        accuracy      = mean(metr_mat$accuracy,      na.rm = TRUE),
+        net_benefit   = mean(metr_mat$net_benefit,   na.rm = TRUE),
+        stringsAsFactors = FALSE
+      )
+
+      cat(sprintf(
+        "  Sens=%.3f | Espec=%.3f | VPP=%.3f | VPN=%.3f | Acc=%.3f | NB=%.3f | %.1fs\n",
+        resultats_llista[[idx]]$sensibilitat,
+        resultats_llista[[idx]]$especificitat,
+        resultats_llista[[idx]]$VPP,
+        resultats_llista[[idx]]$VPN,
+        resultats_llista[[idx]]$accuracy,
+        resultats_llista[[idx]]$net_benefit,
+        temps_hiper["elapsed"]
+      ))
+
+      idx <- idx + 1
+    }
+  }
+
+  resultats_ranger_hiper <- do.call(rbind, resultats_llista)
+
+})
+
+cat("\n====================================\n")
+cat(sprintf("Temps total: %.2f minuts\n", temps_total["elapsed"] / 60))
+cat("====================================\n\n")
+
+# -------------------------------------------------------------
+# GUARDAR RESULTATS
+# -------------------------------------------------------------
+save(resultats_ranger_hiper,
+     file = "resultats_ranger_hiper.RData")
+
+# -------------------------------------------------------------
+# ANÀLISI DELS RESULTATS
+# -------------------------------------------------------------
+resum_hiper <- resultats_ranger_hiper |>
+  group_by(num.trees, mtry_tipus, llindar) |>
+  summarise(
+    sens_mitjana  = round(mean(sensibilitat,  na.rm = TRUE), 3),
+    espec_mitjana = round(mean(especificitat, na.rm = TRUE), 3),
+    acc_mitjana   = round(mean(accuracy,      na.rm = TRUE), 3),
+    nb_mitjana    = round(mean(net_benefit,   na.rm = TRUE), 3),
+    .groups = "drop"
+  )
+
+cat("\n--- TOP 5 per SENSIBILITAT ---\n")
+resum_hiper |>
+  arrange(desc(sens_mitjana)) |>
+  slice_head(n = 5) |>
+  print()
+
+cat("\n--- TOP 5 per ESPECIFICITAT ---\n")
+resum_hiper |>
+  arrange(desc(espec_mitjana)) |>
+  slice_head(n = 5) |>
+  print()
+
+cat("\n--- RESUM COMPLET ---\n")
+resum_hiper |>
+  arrange(desc(sens_mitjana)) |>
+  print(n = Inf)
+```
+
