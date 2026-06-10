@@ -310,9 +310,9 @@ p_fp_barres <- ggplot(fp_total,
   ) +
   scale_y_continuous(labels = function(x) paste0(x, "%")) +
   labs(
-    title = "Falsos positius (%) — Escenari nul",
+    title = " Ràtio de Falsos positius — Escenari nul",
     x     = "Mètode",
-    y     = "FP (%)"
+    y     = "Ràtio FP (%)"
   ) +
   theme_bw(base_size = 11) +
   theme(
