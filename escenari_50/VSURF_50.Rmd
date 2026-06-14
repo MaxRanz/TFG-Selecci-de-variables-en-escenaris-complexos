@@ -26,7 +26,6 @@ una_iteracio_50 <- function(j, X_esc, Y_esc, num_vars) {
                          parallel = FALSE,
                          verbose  = FALSE)
 
-    # Índexs de les variables seleccionades (ja són numèrics directament)
     idx <- model_vsurf$varselect.interp
     idx <- idx[!is.na(idx) & idx >= 1 & idx <= num_vars]
 
