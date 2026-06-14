@@ -14,7 +14,6 @@ library(biglm)
 library(bigstep)
 library(caret)
 
-# Inicialitzem els resultats
 resultats_step50 <- data.frame(
   N = integer(), pi = numeric(), correlation = character(), iter = integer(),
   Sensibilitat = numeric(), Especificitat = numeric(),
@@ -37,26 +36,23 @@ system.time({
       print(paste("Escenari", i, "- Simulació", j,
                   "| N =", N, "| pi =", pi, "| corr =", correlation))
       
-      # Seleccionem les dades
       x_mat <- X[[i]][[j]]
       colnames(x_mat) <- paste0("X", 1:ncol(x_mat))
       y_vec <- Y[[i]][[j]]
       dades <- data.frame(y = y_vec, x_mat)
       
-      # Ajustem el model stepwise
       model_null <- glm(y ~ 1,   data = dades, family = binomial)
       model_full <- glm(y ~ .,   data = dades, family = binomial)
       model_step <- step(model_null,
                          scope = list(lower = model_null, upper = model_full),
                          direction = "both", trace = 0)
       
-      # Mètriques
+      
       vars_seleccionades <- which(coefficients(model_step)[-1] != 0)
       vars_selec_bin[j, vars_seleccionades] <- 1
       metrics[[j]] <- metriques(vars_seleccionades, nv = num_vars)
     }
     
-    # Guardar resultats
     resultats_step50 <- rbind(resultats_step50, data.frame(
       N           = N,
       pi          = pi,
