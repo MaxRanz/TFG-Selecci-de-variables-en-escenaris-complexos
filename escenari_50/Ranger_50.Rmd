@@ -9,7 +9,6 @@ output: html_document
 
 ```{r}
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
-
 load("dades_escenari_50_corrAleat.RData")
 
 library(ranger)
@@ -17,7 +16,6 @@ library(caret)
 library(futurize)
 library(progressify)
 
-# Paral·lelització
 plan(multisession, workers = 12)
 
 # Funció per una simulació
@@ -47,7 +45,7 @@ una_iteracio_50 <- function(j, X_esc, Y_esc, num_vars, num_sig) {
 
     imp <- importance(model_rf)
 
-    # llindar de selecció
+    # llindar de selecció en 0,001
     sel_noms <- names(imp[imp > 0.001])
 
     if(length(sel_noms) == 0) {
