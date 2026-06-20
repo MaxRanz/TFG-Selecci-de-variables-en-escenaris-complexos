@@ -1,0 +1,169 @@
+---
+title: "Boruta escenari 50% amb gràfics"
+author: "Max Ranz de la Iglesia"
+date: "2026-06-18"
+output: html_document
+---
+
+# Bortua 50% afegint gràfics
+```{r}
+# Boruta 50%
+setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
+load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_50_corrAleat.RData")
+library(Boruta)
+library(caret)
+library(ggplot2)
+
+resultats_boruta <- data.frame(
+  N             = integer(),
+  pi            = numeric(),
+  correlation   = character(),  
+  Sensibilitat  = numeric(),
+  Especificitat = numeric(),
+  VPP           = numeric(),
+  VPN           = numeric(),
+  Accuracy      = numeric(),
+  NetBenefit    = numeric(),
+  stringsAsFactors = FALSE
+)
+vars_seleccionades_boruta <- list()
+models_boruta_exemple     <- list()   
+
+system.time({
+  for (i in seq_len(nrow(comb))) {
+    N           <- comb$N[i]
+    pi          <- comb$pi[i]
+    correlation <- as.character(comb$correlation[i])
+    metrics        <- list()
+    vars_selec_bin <- matrix(0, nrow = iters, ncol = num_vars)
+    model_boruta_last <- NULL   # <-- NOU
+
+    for (j in 1:iters) {
+      cat("Escenari", i, "- Simulació", j,
+          "(N=", N, "pi=", pi, "corr=", correlation, ")\n")
+      X_df  <- as.data.frame(X[[i]][[j]])
+      y_fac <- as.factor(Y[[i]][[j]])
+      df_boruta <- data.frame(y = y_fac, X_df)
+
+      tryCatch({
+        model_boruta <- suppressWarnings(
+          Boruta(y ~ ., data = df_boruta, doTrace = 0)
+        )
+        model_boruta_last <- model_boruta  # Ara s'actualitza per iteració
+
+        seleccionades <- getSelectedAttributes(model_boruta, withTentative = FALSE)
+        if (length(seleccionades) > 0) {
+          idx_sel <- as.numeric(gsub("[^0-9]", "", seleccionades))
+          idx_sel <- idx_sel[!is.na(idx_sel) & idx_sel >= 1 & idx_sel <= num_vars]
+          vars_selec_bin[j, idx_sel] <- 1
+          metrics[[j]] <- metriques(idx_sel, nv = num_vars)
+        } else {
+          metrics[[j]] <- metriques(integer(0), nv = num_vars)
+        }
+      }, error = function(e) {
+        cat(sprintf("  [WARN] Escenari %d, sim %d: %s\n", i, j, conditionMessage(e)))
+        metrics[[j]] <<- metriques(integer(0), nv = num_vars)
+      })
+    }
+
+    models_boruta_exemple[[i]] <- model_boruta_last   
+
+    resultats_boruta <- rbind(
+      resultats_boruta,
+      data.frame(
+        N             = N,
+        pi            = pi,
+        correlation   = correlation,
+        Sensibilitat  = mean(sapply(metrics, function(x) x["sensibilitat"]),  na.rm = TRUE),
+        Especificitat = mean(sapply(metrics, function(x) x["especificitat"]), na.rm = TRUE),
+        VPP           = mean(sapply(metrics, function(x) x["VPP"]),           na.rm = TRUE),
+        VPN           = mean(sapply(metrics, function(x) x["VPN"]),           na.rm = TRUE),
+        Accuracy      = mean(sapply(metrics, function(x) x["accuracy"]),      na.rm = TRUE),
+        NetBenefit    = mean(sapply(metrics, function(x) x["net_benefit"]),   na.rm = TRUE),
+        stringsAsFactors = FALSE
+      )
+    )
+    vars_seleccionades_boruta[[i]] <- vars_selec_bin
+  }
+})
+
+print(resultats_boruta)
+save(resultats_boruta, vars_seleccionades_boruta, models_boruta_exemple,
+     file = "resultats_boruta_50_correlacio.RData")
+```
+
+```{r}
+
+# MILLOR ESCENARI: N=1000,pi=0,2, correlació=0,1
+escenari_plot <- 8
+model_plot    <- models_boruta_exemple[[escenari_plot]]
+
+if (!is.null(model_plot)) {
+
+  par(mar = c(8, 4, 4, 2))
+  plot(model_plot,
+       las   = 2,          
+       cex.axis = 0.55,    
+       main  = sprintf("Boruta – Escenari %d (N=%d, pi=%s, corr=%s)",
+                       escenari_plot,
+                       comb$N[escenari_plot],
+                       comb$pi[escenari_plot],
+                       comb$correlation[escenari_plot]),
+       xlab  = "",
+       ylab  = "Importància (Z-score)")
+
+  # Gràfic 2
+  imp_df <- as.data.frame(model_plot$ImpHistory)
+
+  imp_means <- colMeans(imp_df, na.rm = TRUE)
+
+  decisio    <- model_plot$finalDecision                  
+  shadow_nms <- c("shadowMin", "shadowMean", "shadowMax")
+
+  var_nms <- names(decisio)
+  plot_df <- data.frame(
+    Variable   = var_nms,
+    Importance = imp_means[var_nms],
+    Decision   = as.character(decisio),
+    stringsAsFactors = FALSE
+  )
+
+  plot_df <- plot_df[order(plot_df$Importance, decreasing = TRUE), ]
+  plot_df$Variable <- factor(plot_df$Variable, levels = plot_df$Variable)
+
+  cols <- c("Confirmed" = "#2ecc71", "Tentative" = "#f39c12", "Rejected" = "#e74c3c")
+
+  g <- ggplot(plot_df, aes(x = Variable, y = Importance, fill = Decision)) +
+    geom_bar(stat = "identity") +
+    scale_fill_manual(values = cols,
+                      labels = c("Confirmed" = "Confirmada",
+                                 "Tentative" = "Tentativa",
+                                 "Rejected"  = "Rebutjada")) +
+    geom_hline(yintercept = imp_means["shadowMax"],  linetype = "dashed",
+               colour = "steelblue", linewidth = 0.7) +
+    geom_hline(yintercept = imp_means["shadowMean"], linetype = "dotted",
+               colour = "steelblue", linewidth = 0.5) +
+    labs(
+      title = sprintf("Boruta – Escenari %d  (N = %d, π = %s, corr = %s)",
+                      escenari_plot,
+                      comb$N[escenari_plot],
+                      comb$pi[escenari_plot],
+                      comb$correlation[escenari_plot]),
+      x    = "Variable",
+      y    = "Importància mitjana (Z-score)",
+      fill = "Decisió"
+    ) +
+    theme_bw(base_size = 11) +
+    theme(
+      axis.text.x  = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6),
+      plot.title   = element_text(face = "bold", hjust = 0.5),
+      legend.position = "top"
+    )
+
+  print(g)
+
+  ggsave(sprintf("boruta_plot_escenari%d.png", escenari_plot),
+         plot = g, width = 14, height = 6, dpi = 300)
+}
+```
+
