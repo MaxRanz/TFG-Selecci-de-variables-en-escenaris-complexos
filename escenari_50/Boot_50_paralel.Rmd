@@ -17,14 +17,17 @@ library(futurize)
 library(progressify)
 library(caret)
 
-plan(multisession, workers = 12)
+plan(multisession, workers = 12) # definim els nuclis per a la paral·lelització
 
 iters_boot <- iters * 2
 num_vars2  <- num_vars / 2    
 num_sig2   <- num_vars2 / 2    
-B          <- 20             
+B          <- 20  # remostres Bootstrap           
 
 # fixem p=0,5
+# Funció per calcular mètriques de selecció de variables
+# comparant variables seleccionades vs variables realment rellevants
+
 metriques <- function(vars_seleccionades, p = 0.5, nv) {
   num_sig     <- nv / 2
   real_labels <- c(rep(1, num_sig), rep(0, nv - num_sig))
@@ -61,6 +64,8 @@ resultats_boot_50 <- data.frame(
   stringsAsFactors = FALSE
 )
 
+# Matriu binària per registrar quines variables
+# són seleccionades a cada remostra
 system.time({
   for (i in seq_len(nrow(comb))) {
 
@@ -102,7 +107,7 @@ system.time({
                       i, j, b, conditionMessage(e)))
         })
       }
-
+# Es retenen variables seleccionades en més del 75% de les remostres
       freq_seleccio <- colMeans(seleccio_vars)
       vars_sel      <- which(freq_seleccio > 0.75)
 
@@ -142,7 +147,9 @@ system.time({
         stringsAsFactors = FALSE
       )
     )
-
+    
+# Guardat intermedi per evitar pèrdua de resultats
+# en execucions llargues
     save(resultats_boot_50, file = "resultats_boot_50_parcial.RData")
     cat(sprintf("  >>> Escenari %d completat | Sens=%.3f | Esp=%.3f | VPP=%.3f\n",
                 i,
