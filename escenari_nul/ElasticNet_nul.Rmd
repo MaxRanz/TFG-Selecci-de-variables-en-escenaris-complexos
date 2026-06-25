@@ -9,7 +9,7 @@ output: html_document
 
 ```{r}
 # Aquest script aplica Elastic Net (glmnet) per selecció de variables
-# en l’escenari nul, amb l’objectiu d’estimar la taxa de falsos positius
+# en l’escenari nul, amb l’objectiu d’estimar el nombre de falsos positius
 # quan no hi ha variables realment associades a la resposta.
 
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
