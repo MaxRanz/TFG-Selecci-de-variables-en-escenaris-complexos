@@ -16,6 +16,7 @@ library(caret)
 library(futurize)
 library(progressify)
 
+# Paral·lelització de les simulacions per reduir temps de càlcul
 plan(multisession, workers = 12)
 
 # Funció per una simulació
@@ -45,7 +46,8 @@ una_iteracio_50 <- function(j, X_esc, Y_esc, num_vars, num_sig) {
 
     imp <- importance(model_rf)
 
-    # llindar de selecció en 0,001
+    # llindar de selecció en 0,001:  Es consideren seleccionades les variables amb
+    # importància per permutació superior al llindar per tal d'evitar retenir variables amb importància residual
     sel_noms <- names(imp[imp > 0.001])
 
     if(length(sel_noms) == 0) {
