@@ -13,9 +13,11 @@ library(randomForest)
 library(caret)
 
 
-# Funció de selecció per salt màxim (un salt)
+# Funció de selecció per salt màxim (un salt): el màxim salt entre valors consecutius de la importància ordenada. 
+# El punt de tall s’estableix en la major diferència observada per separar variables més informatives de la resta.
 
 escoger_rf <- function(x, porcentage_min = 3) {
+  # Si cap variable supera el llindar mínim d’importància, es considera que no hi ha selecció
   if (max(x) < porcentage_min) return(NA)
   l   <- length(x)
   cog <- c()
@@ -63,7 +65,7 @@ system.time({
 
       tryCatch({
         model_rf <- randomForest(x = X_df, y = y_fac, importance = TRUE)
-
+# s'utilitza la importància per permutació (Mean Decrease Accuracy)
         importancia          <- importance(model_rf, type = 1)
         importancia_ordenada <- sort(importancia[, 1], decreasing = TRUE)
 
