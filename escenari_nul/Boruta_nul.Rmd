@@ -7,6 +7,10 @@ output: html_document
 
 # Boruta
 ```{r}
+# Aquest script aplica el mètode Boruta per selecció de variables
+# en l’escenari nul (sense variables realment informatives),
+# amb l’objectiu d’estimar el nombre de falsos positius.
+
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
 load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_nul_corrAleat.RData")
 library(Boruta)
@@ -50,7 +54,8 @@ system.time({
             maxRuns = 100
           )
         )
-
+        
+        # Variables confirmades com a importants
         seleccionades <- getSelectedAttributes(
           model_boruta,
           withTentative = FALSE
