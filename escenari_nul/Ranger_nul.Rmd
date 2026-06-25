@@ -8,6 +8,10 @@ output: html_document
 
 # Ranger escenari nul
 ```{r}
+# Aquest script aplica Random Forest (ranger) per selecció de variables
+# en l’escenari nul per estimar el nombre de falsos positius
+# a partir de la importància de variables.
+
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
 
 load("dades_escenari_nul_corrAleat.RData")
@@ -19,7 +23,7 @@ library(progressify)
 # Paral·lelització
 plan(multisession, workers = 12)
 
-# Funció per a una simulació
+# Funció per executar una simulació bootstrap/simulada
 una_iteracio_nul <- function(j, X_esc, Y_esc) {
 
   library(ranger)
@@ -42,9 +46,9 @@ una_iteracio_nul <- function(j, X_esc, Y_esc) {
       num.threads = 1,
       seed = 123
     )
-
+    # Importància de variables (permutation importance)
     imp <- importance(model_rf)
-
+    # Selecció de variables amb importància per sobre del llindar (0.001)
    sel <- names(imp[imp > 0.001])
 
     if (length(sel) == 0) {
@@ -97,7 +101,7 @@ temps_total <- system.time({
     ))
 
     temps_esc <- system.time({
-
+    # Aplicació del model a totes les iteracions
       fp_iter <- lapply(
         1:iters,
         una_iteracio_nul,
