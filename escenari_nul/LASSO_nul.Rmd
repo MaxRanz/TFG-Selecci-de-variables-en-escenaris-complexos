@@ -8,6 +8,9 @@ output: html_document
 # LASSO nul
 
 ```{r}
+# Aquest script aplica LASSO (glmnet) per selecció de variables
+# en l’escenari nul, per estimar el nombre de falsos positius.
+
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
 load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_nul_corrAleat.RData")
 library(glmnet)
@@ -36,13 +39,13 @@ system.time({
 
       X_mat <- as.matrix(X[[i]][[j]])
       y_bin <- Y[[i]][[j]]
-
+      # Ajust LASSO amb validació creuada
       tryCatch({
         lambda_estim <- cv.glmnet(X_mat, y_bin,
                                   family = "binomial",
                                   alpha  = 1,
                                   nfolds = 5)
-
+        # Coeficients del model seleccionat (lambda òptim)
         coef_lasso   <- coef(lambda_estim, s = "lambda.min")[-1]
         fp_lasso[j]  <- sum(coef_lasso != 0)
 
