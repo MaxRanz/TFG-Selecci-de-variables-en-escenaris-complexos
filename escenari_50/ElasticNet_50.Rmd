@@ -44,17 +44,19 @@ system.time({
       X_mat <- as.matrix(X[[i]][[j]])
       y_vec <- Y[[i]][[j]]
 
+      # apliquem validació creuada per trobar el valor òptim de lambda
       tryCatch({
         lambda_estim <- cv.glmnet(X_mat, y_vec,
                                   family = "binomial",
                                   alpha  = 0.5,
                                   nfolds = 5)
-
+      # s'ajusta el model final amb el lambda òptim
         model_enet <- glmnet(X_mat, y_vec,
                              alpha  = 0.5,
                              family = "binomial",
                              lambda = lambda_estim$lambda.min)
-
+# Selecció de variables amb coeficients prou grans (llindar sd(x)/20)
+# per evitar retenir efectes pràcticament nuls
         vars_seleccionades <- which(
           coefficients(model_enet)[-1] >= sd(as.vector(X[[i]][[j]])) / 20
         )
