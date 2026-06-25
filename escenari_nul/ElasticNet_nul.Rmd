@@ -8,6 +8,10 @@ output: html_document
 # Elastic Net nul
 
 ```{r}
+# Aquest script aplica Elastic Net (glmnet) per selecció de variables
+# en l’escenari nul, amb l’objectiu d’estimar la taxa de falsos positius
+# quan no hi ha variables realment associades a la resposta.
+
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
 load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_nul_corrAleat.RData")
 library(glmnet)
@@ -36,13 +40,13 @@ system.time({
 
       X_mat <- as.matrix(X[[i]][[j]])
       y_bin <- Y[[i]][[j]]
-
+      # Ajust Elastic Net amb validació creuada
       tryCatch({
         lambda_estim <- cv.glmnet(X_mat, y_bin,
                                   family = "binomial",
                                   alpha  = 0.5,
                                   nfolds = 5)
-
+        # Coeficients del model seleccionat (lambda òptim)
         coef_enet  <- coef(lambda_estim, s = "lambda.min")[-1]
         fp_enet[j] <- sum(coef_enet != 0)
 
