@@ -8,6 +8,9 @@ output: html_document
 # Bootstrap PARAL·LELITZAT nul
 
 ```{r}
+# Aquest script aplica un bootstrap en paral·lel sobre dades simulades
+# de l’escenari nul per estimar la taxa de falsos positius (FP)
+# en la selecció de variables.
 
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
 load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_nul_corrAleat.RData")
@@ -59,13 +62,14 @@ system.time({
       colnames(seleccio_vars) <- paste0("X", 1:num_vars2)
 
       b_valids <- 0
-
+      
+      # Rèpliques bootstrap
       for (b in 1:B) {
         idx_boot <- sample(1:n_boot, n_boot, replace = TRUE)
         X_boot   <- X_base[idx_boot, ]
         y_boot   <- y_base[idx_boot]
-
-        tryCatch({
+        # Ajust del model stepwise en cada bootstrap 
+         tryCatch({
           d     <- prepare_data(y = y_boot, X_boot, type = "logistic")
           model <- stepwise(d, crit = aic)
 
@@ -83,14 +87,14 @@ system.time({
                       i, j, b, conditionMessage(e)))
         })
       }
-
+      # Freqüència de selecció de cada variable
       if (b_valids > 0) {
         freq_seleccio <- colMeans(seleccio_vars[1:B, , drop = FALSE])
       } else {
         cat(sprintf("  [ERROR TOTAL] Escenari %d, sim %d: cap rèplica vàlida\n", i, j))
         freq_seleccio <- rep(0, num_vars2)
       }
-
+      # Comptatge de falsos positius segons llindars: ens quedem amb el del 0.75 (millors resultats)
       cat(sprintf("  [DIAG i=%d j=%d] Vàlids: %d/%d | Max freq: %.2f | FP(>0.5): %d | FP(>0.75): %d\n",
                   i, j, b_valids, B,
                   max(freq_seleccio),
