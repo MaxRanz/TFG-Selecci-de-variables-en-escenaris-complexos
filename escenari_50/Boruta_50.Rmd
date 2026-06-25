@@ -15,6 +15,7 @@ load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_es
 library(Boruta)
 library(caret)
 
+# Data frame on es guardaran les mètriques agregades per escenari
 resultats_boruta <- data.frame(
   N             = integer(),
   pi            = numeric(),
@@ -30,7 +31,7 @@ resultats_boruta <- data.frame(
 
 vars_seleccionades_boruta <- list()
 
-
+# es recorren totes les combinacions d’escenaris simulats
 system.time({
   for (i in seq_len(nrow(comb))) {
 
@@ -47,14 +48,14 @@ system.time({
 
       X_df  <- as.data.frame(X[[i]][[j]])
       y_fac <- as.factor(Y[[i]][[j]])
-
+# es preparen les dades en format compatible amb Boruta
       df_boruta <- data.frame(y = y_fac, X_df)
 
       tryCatch({
         model_boruta <- suppressWarnings(
           Boruta(y ~ ., data = df_boruta, doTrace = 0)
         )
-
+# recollim només les variables confirmades (sense les tentatives)
         seleccionades <- getSelectedAttributes(model_boruta, withTentative = FALSE)
 
         if (length(seleccionades) > 0) {
