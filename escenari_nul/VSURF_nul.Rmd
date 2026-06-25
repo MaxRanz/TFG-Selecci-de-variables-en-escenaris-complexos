@@ -1,11 +1,16 @@
 ---
-title: "Random forest amb VSURF"
+title: "Random forest amb VSURF: escenari nul"
 author: "Max Ranz de la Iglesia"
 date: "2026-06-04"
 output: html_document
 ---
 
+# VSURF en l'escenari nul
 ```{r}
+# Aquest script aplica el mètode VSURF (Variable Selection Using Random Forests)
+# en l’escenari nul estimant el nombre falsos positius
+# sent un mètode wrapper basat en Random Forest.
+
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
 load("dades_escenari_nul_corrAleat.RData")
 
@@ -19,7 +24,7 @@ una_iteracio_nul <- function(j, X_esc, Y_esc) {
     model_vsurf <- VSURF(x = X_df, y = y_fac,
                          parallel = FALSE,
                          verbose  = FALSE)
-    sel <- model_vsurf$varselect.interp
+    sel <- model_vsurf$varselect.interp    # Variables seleccionades en el grup d'interpretació (agafem aquest perquè #el seu objectiu és seleccionar totes les variables rellevants)
     ifelse(length(sel) == 0, 0, length(sel))
   }, error = function(e) {
     cat(sprintf("  [WARN VSURF] sim %d: %s\n", j, conditionMessage(e)))
