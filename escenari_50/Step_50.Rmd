@@ -7,6 +7,10 @@ output: html_document
 
 # STEPWISE 50%
 ```{r}
+# Aquest script aplica selecció de variables amb el mètode stepwise
+# en un escenari amb 50% de dades simulades.
+# Es carreguen les dades i les combinacions d’escenaris (N, pi i correlació).
+
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
 load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_50_corrAleat.RData")
 library(bigmemory)
@@ -40,9 +44,10 @@ system.time({
       colnames(x_mat) <- paste0("X", 1:ncol(x_mat))
       y_vec <- Y[[i]][[j]]
       dades <- data.frame(y = y_vec, x_mat)
-      
+      # Model nul i model complet
       model_null <- glm(y ~ 1,   data = dades, family = binomial)
       model_full <- glm(y ~ .,   data = dades, family = binomial)
+            # Selecció stepwise (bidireccional)
       model_step <- step(model_null,
                          scope = list(lower = model_null, upper = model_full),
                          direction = "both", trace = 0)
