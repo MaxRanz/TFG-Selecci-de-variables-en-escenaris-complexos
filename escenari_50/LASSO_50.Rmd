@@ -46,7 +46,8 @@ system.time({
 
       X_mat <- as.matrix(X[[i]][[j]])
       y_vec <- Y[[i]][[j]]
-
+      
+# LASSO (alpha = 1) amb lambda seleccionat per validació creuada
       tryCatch({
         lambda_estim <- cv.glmnet(X_mat, y_vec,
                                   family = "binomial",
@@ -61,7 +62,7 @@ system.time({
                               lambda = lambda_estim$lambda.min,
                               maxit  = 1000000,
                               thresh = 1e-7)
-
+# Es considera una variable seleccionada si el coeficient supera el llindar mínim 
         vars_seleccionades <- which(
           coefficients(model_lasso)[-1] >= sd(as.vector(X[[i]][[j]])) / 20
         )
