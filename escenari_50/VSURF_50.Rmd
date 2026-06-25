@@ -4,7 +4,12 @@ author: "Max Ranz de la Iglesia"
 date: "2026-06-06"
 output: html_document
 ---
+
+# VSURF 50%
 ```{r}
+# VSURF aplica un procés de selecció en diferents fases
+# basat en Random Forest per identificar variables rellevants
+
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
 load("dades_escenari_50_corrAleat.RData")
 
@@ -25,7 +30,7 @@ una_iteracio_50 <- function(j, X_esc, Y_esc, num_vars) {
     model_vsurf <- VSURF(x = X_df, y = y_fac,
                          parallel = FALSE,
                          verbose  = FALSE)
-
+# seleccionem les variables en la fase d’interpretació, té l'objectiu de retenir totes les variables rellevants
     idx <- model_vsurf$varselect.interp
     idx <- idx[!is.na(idx) & idx >= 1 & idx <= num_vars]
 
