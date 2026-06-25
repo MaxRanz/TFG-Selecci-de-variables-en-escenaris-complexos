@@ -8,6 +8,10 @@ output: html_document
 # Stepwise nul
 
 ```{r}
+# Aquest script aplica selecció de variables amb el mètode stepwise
+# en l’escenari nul per obtenir el nombre de falsos positius
+# quan no hi ha cap relació real entre les variables explicatives i la resposta.
+
 setwd("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos")
 load("D:/Documentos/TFG/TFG-Selecci-de-variables-en-escenaris-complexos/dades_escenari_nul_corrAleat.RData")
 
@@ -20,6 +24,7 @@ resultats_sw <- data.frame(
   stringsAsFactors = FALSE
 )
 
+# Funció per comptar variables seleccionades pel model stepwise
 compta_vars_step <- function(model) {
   coeficients <- summary(model)$coefficients
   nvar <- nrow(coeficients) - 1
@@ -45,9 +50,11 @@ system.time({
       dades <- data.frame(Y = Y_bin, X_sub)
 
       tryCatch({
+        # Model nul i model complet
         nulmodel  <- glm(Y ~ 1,  data = dades, family = binomial)
         fullmodel <- glm(Y ~ .,  data = dades, family = binomial)
-
+      
+        # Stepwise bidireccional (forward + backward)
         stepmodel <- step(
           nulmodel,
           scope     = list(lower = nulmodel, upper = fullmodel),
